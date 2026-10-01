@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Customer Purchase Prediction Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f27;--mu:#667085;--bd:#e3e6ec;--ac:#3b6cf6;--ok:#12a36b;--no:#e5484d;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1218;--card:#181c25;--tx:#e8ebf1;--mu:#98a2b3;--bd:#2a303c;--ac:#6b93ff}}
+:root[data-theme="dark"]{--bg:#0f1218;--card:#181c25;--tx:#e8ebf1;--mu:#98a2b3;--bd:#2a303c;--ac:#6b93ff}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:0}h2{font-size:15px;margin:0 0 12px}p.s{color:var(--mu);margin:4px 0 16px}
+.grid{display:grid;gap:14px}.k{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}.two{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px;overflow-x:auto}
+.kpi .v{font-size:26px;font-weight:650}.kpi .l{color:var(--mu);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+button,.btn{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;cursor:pointer}
+button.g{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+label{display:block;font-size:12px;color:var(--mu);margin-bottom:3px}input,select{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.bar{height:14px;border-radius:7px;background:var(--bd);overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.res{font-size:20px;font-weight:650;margin:10px 0 6px}
+svg text{fill:var(--mu);font-size:11px}
+.note{font-size:12px;color:var(--mu)}
+</style></head><body><main>
+<div class="row" style="justify-content:space-between"><div><h1>Customer Purchase Prediction</h1>
+<p class="s" id="src">Loading…</p></div>
+<div class="row"><label class="btn" style="margin:0">Upload CSV<input id="f" type="file" accept=".csv" hidden></label><button class="g" id="demo">Use demo data</button></div></div>
+<div class="grid k" id="kpis"></div>
+<div class="grid two" style="margin-top:14px">
+<div class="card"><h2>Purchase status distribution</h2><div id="dist"></div></div>
+<div class="card"><h2>Feature importance (|std. coefficient|)</h2><div id="imp"></div></div>
+<div class="card"><h2>ROC curve</h2><div id="roc"></div></div>
+<div class="card"><h2>Confusion matrix (test set)</h2><div id="cm"></div></div>
+</div>
+<div class="card"><h2>Predict a customer</h2>
+<div class="form" id="form"></div>
+<div class="row" style="margin-top:12px"><button id="go">Predict</button></div>
+<div class="res" id="out"></div><div class="bar"><i id="pb" style="width:0"></i></div></div>
+<p class="note">Model: logistic regression trained in your browser on an 80/20 split — your data never leaves this page. Upload <b>customer_purchase_data.csv</b> with columns Age, Gender, AnnualIncome, NumberOfPurchases, ProductCategory, TimeSpentOnWebsite, LoyaltyProgram, DiscountsAvailed, PurchaseStatus.</p>
+</main>
+<script>
+const F=["Age","Gender","AnnualIncome","NumberOfPurchases","ProductCategory","TimeSpentOnWebsite","LoyaltyProgram","DiscountsAvailed"];
+const DEF={Age:40,Gender:0,AnnualIncome:80000,NumberOfPurchases:10,ProductCategory:2,TimeSpentOnWebsite:30,LoyaltyProgram:1,DiscountsAvailed:2};
+let M=null;
+function rng(s){return()=>(s=(s*1664525+1013904223)%4294967296)/4294967296}
+function demoData(){const r=rng(42),n=()=>{let u=0;for(let i=0;i<6;i++)u+=r();return u-3};const rows=[];
+for(let i=0;i<1500;i++){const o={Age:Math.round(18+r()*52),Gender:r()<.5?0:1,AnnualIncome:Math.round(20000+r()*130000),NumberOfPurchases:Math.floor(r()*21),ProductCategory:Math.floor(r()*5),TimeSpentOnWebsite:+(r()*60).toFixed(1),LoyaltyProgram:r()<.5?1:0,DiscountsAvailed:Math.floor(r()*6)};
+const z=-3.2+.8*o.LoyaltyProgram+.35*o.DiscountsAvailed+.04*o.TimeSpentOnWebsite+.08*o.NumberOfPurchases+.000004*o.AnnualIncome+n()*.7;
+o.PurchaseStatus=r()<1/(1+Math.exp(-z))?1:0;rows.push(o)}return rows}
+function parse(t){const L=t.trim().split(/\r?\n/),h=L[0].split(",").map(s=>s.trim().replace(/^"|"$/g,""));
+return L.slice(1).map(l=>{const c=l.split(","),o={};h.forEach((k,i)=>o[k]=parseFloat(c[i]));return o}).filter(o=>F.concat("PurchaseStatus").every(k=>isFinite(o[k])))}
+function train(rows){const r=rng(7),d=rows.slice();for(let i=d.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[d[i],d[j]]=[d[j],d[i]]}
+const nt=Math.floor(d.length*.8),tr=d.slice(0,nt),te=d.slice(nt),p=F.length;
+const mu=F.map(f=>tr.reduce((a,o)=>a+o[f],0)/tr.length),sd=F.map((f,i)=>Math.sqrt(tr.reduce((a,o)=>a+(o[f]-mu[i])**2,0)/tr.length)||1);
+const x=o=>F.map((f,i)=>(o[f]-mu[i])/sd[i]);const sg=z=>1/(1+Math.exp(-z));
+const X=tr.map(x),Y=tr.map(o=>o.PurchaseStatus);let w=Array(p).fill(0),b=0;
+for(let e=0;e<500;e++){const gw=Array(p).fill(0);let gb=0;X.forEach((v,i)=>{const err=sg(b+v.reduce((a,t,k)=>a+t*w[k],0))-Y[i];v.forEach((t,k)=>gw[k]+=err*t);gb+=err});
+w=w.map((t,k)=>t-.3*(gw[k]/X.length+.001*t));b-=.3*gb/X.length}
+const pr=o=>sg(b+x(o).reduce((a,t,k)=>a+t*w[k],0));
+const P=te.map(pr),T=te.map(o=>o.PurchaseStatus);let tp=0,fp=0,tn=0,fn=0;P.forEach((q,i)=>{const y=q>=.5?1:0;if(y&&T[i])tp++;else if(y)fp++;else if(T[i])fn++;else tn++});
+const idx=P.map((_,i)=>i).sort((a,c)=>P[c]-P[a]),pos=T.reduce((a,t)=>a+t,0),neg=T.length-pos;let ct=0,cf=0;const roc=[[0,0]];let auc=0;
+idx.forEach(i=>{T[i]?ct++:cf++;const pt=roc[roc.length-1];const nx=[cf/neg,ct/pos];auc+=(nx[0]-pt[0])*(nx[1]+pt[1])/2;roc.push(nx)});
+const prec=tp/(tp+fp||1),rec=tp/(tp+fn||1);
+return{pr,rows,n:d.length,roc,auc,tp,fp,tn,fn,acc:(tp+tn)/te.length,prec,rec,f1:2*prec*rec/(prec+rec||1),imp:F.map((f,i)=>[f,Math.abs(w[i])]).sort((a,c)=>c[1]-a[1]),pos:d.filter(o=>o.PurchaseStatus).length}}
+function bars(data,fmt){const m=Math.max(...data.map(d=>d[1]));return`<svg viewBox="0 0 420 ${data.length*28}" width="100%">`+data.map((d,i)=>`<text x="0" y="${i*28+16}">${d[0]}</text><rect x="140" y="${i*28+4}" width="${d[1]/m*210}" height="16" rx="4" fill="var(--ac)"/><text x="${146+d[1]/m*210}" y="${i*28+16}">${fmt(d[1])}</text>`).join("")+"</svg>"}
+function render(){const m=M,pc=v=>(v*100).toFixed(1)+"%";
+kpis.innerHTML=[["Customers",m.n],["Buy rate",pc(m.pos/m.n)],["Accuracy",pc(m.acc)],["Precision",pc(m.prec)],["Recall",pc(m.rec)],["F1",m.f1.toFixed(3)],["ROC-AUC",m.auc.toFixed(3)]].map(k=>`<div class="card kpi" style="margin:0"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join("");
+dist.innerHTML=bars([["No purchase (0)",m.n-m.pos],["Purchase (1)",m.pos]],v=>v);
+imp.innerHTML=bars(m.imp,v=>v.toFixed(2));
+roc.innerHTML=`<svg viewBox="0 0 260 240" width="100%" style="max-width:340px"><rect x="30" y="10" width="210" height="200" fill="none" stroke="var(--bd)"/><line x1="30" y1="210" x2="240" y2="10" stroke="var(--bd)" stroke-dasharray="4"/><polyline fill="none" stroke="var(--ac)" stroke-width="2.5" points="${m.roc.filter((_,i)=>i%Math.ceil(m.roc.length/150)==0).map(p=>`${30+p[0]*210},${210-p[1]*200}`).join(" ")}"/><text x="110" y="230">False positive rate</text><text x="130" y="30">AUC ${m.auc.toFixed(3)}</text></svg>`;
+const c=[[m.tn,m.fp],[m.fn,m.tp]],mx=Math.max(m.tn,m.fp,m.fn,m.tp);
+cm.innerHTML=`<svg viewBox="0 0 260 220" width="100%" style="max-width:340px">`+c.map((r,i)=>r.map((v,j)=>`<rect x="${70+j*90}" y="${20+i*90}" width="86" height="86" rx="8" fill="var(--ac)" opacity="${.15+.85*v/mx}"/><text x="${113+j*90}" y="${68+i*90}" text-anchor="middle" style="font-size:18px;fill:var(--tx)">${v}</text>`).join("")).join("")+`<text x="113" y="14" text-anchor="middle">Pred 0</text><text x="203" y="14" text-anchor="middle">Pred 1</text><text x="62" y="68" text-anchor="end">Actual 0</text><text x="62" y="158" text-anchor="end">Actual 1</text></svg>`}
+function setData(rows,label){if(rows.length<50){alert("Need at least 50 valid rows with the expected columns.");return}M=train(rows);src.textContent=label+" · "+rows.length+" rows";render()}
+form.innerHTML=F.map(f=>f=="Gender"||f=="LoyaltyProgram"?`<div><label>${f}</label><select id="i_${f}"><option value="0">0${f=="Gender"?"":" – No"}</option><option value="1" ${DEF[f]?"selected":""}>1${f=="Gender"?"":" – Yes"}</option></select></div>`:`<div><label>${f}</label><input id="i_${f}" type="number" value="${DEF[f]}"></div>`).join("");
+go.onclick=()=>{if(!M)return;const o={};F.forEach(f=>o[f]=parseFloat(document.getElementById("i_"+f).value)||0);const p=M.pr(o);
+out.style.color=p>=.5?"var(--ok)":"var(--no)";out.textContent=(p>=.5?"Likely to purchase":"Unlikely to purchase")+" — "+(p*100).toFixed(1)+"%";pb.style.width=p*100+"%"};
+f.onchange=e=>{const fl=e.target.files[0];if(!fl)return;const r=new FileReader();r.onload=()=>setData(parse(r.result),fl.name);r.readAsText(fl)};
+demo.onclick=()=>setData(demoData(),"Synthetic demo data");
+demo.click();go.click();
+</script></body></html>
